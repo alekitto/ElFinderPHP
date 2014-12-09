@@ -26,6 +26,11 @@
         "dropbox-php/dropbox-php": "Allows you to use Dropbox storage",
         "aws/aws-sdk-php": "Allows you to use AWS S3 storage"
     },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "2.1.x-dev"
+        }
+    },
     "autoload": {
         "psr-4": {"FM\\ElFinderPHP\\": "src/"}
     }
