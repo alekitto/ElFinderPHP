@@ -2,6 +2,7 @@
 
 namespace FM\ElFinderPHP\Driver;
 
+use Aws\S3\S3Client;
 use FM\ElFinderPHP\ElFinder;
 
 /**
@@ -16,6 +17,9 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
 
     protected $driverId = 's3s';
 
+    /**
+     * @var S3Client
+     */
     protected $s3;
 
     public function __construct() {
@@ -37,7 +41,10 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
             return $this->setError('Required options undefined.');
         }
 
-        $this->s3 = new S3SoapClient($this->options['accesskey'], $this->options['secretkey']);
+        $this->s3 = S3Client::factory(array(
+            'key' => $this->options['accesskey'],
+            'secret' => $this->options['secretkey']
+        ));
 
         $this->root = $this->options['path'];
 
@@ -123,18 +130,14 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      * @author Dmitry (dio) Levashov
      **/
     protected function _relpath($path) {
+        $newpath = $this->_normpath($path);
+        $normroot = $this->_normpath($this->root);
 
-
-        $newpath = $path;
-
-
-        if (substr($path, 0, 1) != '/') {
-            $newpath = "/$newpath";
+        if ($newpath == $normroot) {
+            return '';
         }
 
-        $newpath =  preg_replace("/\/$/", "", $newpath);
-
-        $ret = ($newpath == $this->root) ? '' : substr($newpath, strlen($this->root)+1);
+        $ret = substr($newpath, strlen($this->root));
 
         return $ret;
     }
@@ -147,7 +150,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      * @author Dmitry (dio) Levashov
      **/
     protected function _abspath($path) {
-        return $path == $this->separator ? $this->root : $this->root.$this->separator.$path;
+        return $path == $this->separator ? $this->root : ($this->root.$this->separator.$path);
     }
 
     /**
@@ -171,27 +174,6 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      **/
     protected function _inpath($path, $parent) {
         return $path == $parent || strpos($path, $parent.'/') === 0;
-    }
-
-
-    /**
-     * Converting array of objects with name and value properties to
-     * array[key] = value
-     * @param  array  $metadata  source array
-     * @return array
-     * @author Alexey Sukhotin
-     **/
-    protected function metaobj2array($metadata) {
-        $arr = array();
-
-        if (is_array($metadata)) {
-            foreach ($metadata as $meta) {
-                $arr[$meta->Name] = $meta->Value;
-            }
-        } else {
-            $arr[$metadata->Name] = $metadata->Value;
-        }
-        return $arr;
     }
 
     /**
@@ -235,52 +217,34 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         $np = $this->_normpath($path);
 
         try {
-            $obj = $this->s3->GetObject(array('Bucket' => $this->options['bucket'], 'Key' => $np , 'GetMetadata' => true, 'InlineData' => false, 'GetData' => false));
-        } catch (Exception $e) {
+            $obj = $this->s3->getObject(array('Bucket' => $this->options['bucket'], 'Key' => $np , 'GetMetadata' => true, 'InlineData' => false, 'GetData' => false));
+        } catch (\Exception $e) {
 
         }
 
-        if (!isset($obj) || ($obj->GetObjectResponse->Status->Code != 200)) {
+        if (!isset($obj)) {
             $np .= '/';
             try {
-                $obj = $this->s3->GetObject(array('Bucket' => $this->options['bucket'], 'Key' => $np , 'GetMetadata' => true, 'InlineData' => false, 'GetData' => false));
-            } catch (Exception $e) {
+                $obj = $this->s3->getObject(array('Bucket' => $this->options['bucket'], 'Key' => $np , 'GetMetadata' => true, 'InlineData' => false, 'GetData' => false));
+            } catch (\Exception $e) {
 
             }
         }
 
-        if (!(isset($obj) && $obj->GetObjectResponse->Status->Code == 200)) {
+        if (!isset($obj)) {
             return array();
         }
 
         $mime = '';
-
-        $metadata = $this->metaobj2array($obj->GetObjectResponse->Metadata);
-
-        $mime = $metadata['Content-Type'];
+        $mime = $obj->get('ContentType');
+        $stat['size'] = $obj->get('ContentLength');
 
         if (!empty($mime)) {
             $stat['mime'] = ($mime == 'binary/octet-stream') ? 'directory' : $mime;
         }
 
-        if (isset($obj->GetObjectResponse->LastModified)) {
-            $stat['ts'] = strtotime($obj->GetObjectResponse->LastModified);
-        }
-
-        try {
-            $files = $this->s3->ListBucket(array('Bucket' => $this->options['bucket'], 'Prefix' => $np, 'Delimiter' => '/'))->ListBucketResponse->Contents;
-        } catch (Exception $e) {
-
-        }
-
-        if (!is_array($files)) {
-            $files = array($files);
-        }
-
-        foreach ($files as $file) {
-            if ($file->Key == $np) {
-                $stat['size'] = $file->Size;
-            }
+        if (isset($obj->LastModified)) {
+            $stat['ts'] = strtotime($obj->LastModified);
         }
 
         return $stat;
@@ -339,17 +303,14 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      * @author Alexey Sukhotin
      **/
     protected function _scandir($path) {
-
-        $s3path = preg_replace("/^\//", "", $path) . '/';
-
-        $files = $this->s3->ListBucket(array('Bucket' => $this->options['bucket'], 'delimiter' => '/', 'Prefix' => $s3path))->ListBucketResponse->Contents;
-
+        $s3path = $this->_normpath($path) . '/';
+        $files = $this->s3->listObjects(array('Bucket' => $this->options['bucket'], 'delimiter' => '/', 'Prefix' => $path))->get("Contents");
         $finalfiles = array();
 
         foreach ($files as $file) {
-            if (preg_match("|^" . $s3path . "[^/]*/?$|", $file->Key)) {
-                $fname = preg_replace("/\/$/", "", $file->Key);
-                $fname = $file->Key;
+            if (preg_match("|^" . $s3path . "[^/]*/?$|", $file["Key"])) {
+                $fname = preg_replace("/\/$/", "", $file["Key"]);
+                $fname = $file["Key"];
 
                 if ($fname != preg_replace("/\/$/", "", $s3path)) {
 
@@ -395,16 +356,12 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         if ($fp) {
 
             try {
-                $obj = $this->s3->GetObject(array('Bucket' => $this->options['bucket'], 'Key' => $this->_normpath($path) , 'GetMetadata' => true, 'InlineData' => true, 'GetData' => true));
+                $obj = $this->s3->getObject(array('Bucket' => $this->options['bucket'], 'Key' => $this->_normpath($path) , 'GetMetadata' => true, 'InlineData' => true, 'GetData' => true));
             }	catch (Exception $e) {
 
             }
 
-            $mime = '';
-
-            $metadata = $this->metaobj2array($obj->GetObjectResponse->Metadata);
-
-            fwrite($fp, $obj->GetObjectResponse->Data);
+            fwrite($fp, $obj->get("Body"));
             rewind($fp);
             return $fp;
         }
@@ -445,7 +402,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         $newkey = "$newkey/$name/";
 
         try {
-            $obj = $this->s3->PutObjectInline(array('Bucket' => $this->options['bucket'], 'Key' => $newkey , 'ContentLength' => 0, 'Data' => ''));
+            $obj = $this->s3->putObject(array('Bucket' => $this->options['bucket'], 'Key' => $newkey , 'ContentLength' => 0, 'Body' => ''));
         } catch (Exception $e) {
 
         }
@@ -472,7 +429,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         $newkey = "$newkey/$name";
 
         try {
-            $obj = $this->s3->PutObjectInline(array('Bucket' => $this->options['bucket'], 'Key' => $newkey , 'ContentLength' => 0, 'Data' => '', 'Metadata' => array(array('Name' => 'Content-Type', 'Value' => 'text/plain'))));
+            $obj = $this->s3->putObject(array('Bucket' => $this->options['bucket'], 'Key' => $newkey , 'ContentLength' => 0, 'Data' => '', 'Metadata' => array(array('Name' => 'Content-Type', 'Value' => 'text/plain'))));
         } catch (Exception $e) {
 
         }
@@ -538,7 +495,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         $newkey = preg_replace("/\/$/", "", $newkey);
 
         try {
-            $obj = $this->s3->DeleteObject(array('Bucket' => $this->options['bucket'], 'Key' => $newkey));
+            $obj = $this->s3->deleteObject(array('Bucket' => $this->options['bucket'], 'Key' => $newkey));
         } catch (Exception $e) {
 
         }
@@ -548,15 +505,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
         fwrite($fp, 'key='.$newkey);*/
 
         if (is_object($obj)) {
-            //fwrite($fp, 'obj='.var_export($obj,true));
-
-            if (isset($obj->DeleteObjectResponse->Code)) {
-                $rc = $obj->DeleteObjectResponse->Code;
-
-                if (substr($rc, 0, 1) == '2') {
-                    return true;
-                }
-            }
+            return true;
         }
 
 
@@ -586,7 +535,26 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      * @return bool|string
      * @author Dmitry (dio) Levashov
      **/
-    protected function _save($fp, $dir, $name, $stat) {
+    protected function _save($fp, $dir, $name, $mime, $stat) {
+        $newkey = $this->_normpath($dir);
+        $newkey = preg_replace("/\/$/", "", $newkey);
+        $newkey = "$newkey/$name";
+
+        $content = '';
+        while (!feof($fp)) {
+            $content .= fread($fp, 8192);
+        }
+
+        try {
+            $obj = $this->s3->putObject(array('Bucket' => $this->options['bucket'], 'Key' => $newkey , 'ContentLength' => strlen($content), 'Body' => $content, 'ContentType' => $mime));
+        } catch (Exception $e) {
+
+        }
+
+        if (isset($obj)) {
+            return "$dir/$name";
+        }
+
         return false;
     }
 
@@ -653,85 +621,3 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
     }
 
 }
-
-/**
- * SoapClient extension with Amazon S3 WSDL and request signing support
- *
- * @author Alexey Sukhotin
- **/
-class S3SoapClient extends SoapClient {
-
-    private $accesskey = '';
-    private $secretkey = '';
-    public $client = NULL;
-
-
-    public function __construct($key = '', $secret = '') {
-        $this->accesskey = $key;
-        $this->secretkey = $secret;
-        parent::__construct('http://s3.amazonaws.com/doc/2006-03-01/AmazonS3.wsdl');
-    }
-
-
-    /**
-     * Method call wrapper which adding S3 signature and default arguments to all S3 operations
-     *
-     * @author Alexey Sukhotin
-     **/
-    public function __call($method, $arguments) {
-
-        /* Getting list of S3 web service functions which requires signing */
-        $funcs = $this->__getFunctions();
-
-        $funcnames  = array();
-
-        foreach ($funcs as $func) {
-            preg_match("/\S+\s+([^\)]+)\(/", $func, $m);
-
-            if (isset($m[1])) {
-                $funcnames[] = $m[1];
-            }
-        }
-
-        /* adding signature to arguments */
-        if (in_array("{$method}", $funcnames)) {
-
-            if (is_array($arguments[0])) {
-                $arguments[0] = array_merge($arguments[0], $this->sign("{$method}"));
-            } else {
-                $arguments[0] = $this->sign("{$method}");
-            }
-
-        }
-
-        /*$fp = fopen('/tmp/s3debug.txt', 'a+');
-        fwrite($fp, 'method='."{$method}". ' timestamp='.date('Y-m-d H:i:s').' args='.var_export($arguments,true) . "\n");
-        fclose($fp);*/
-        return parent::__call($method, $arguments);
-    }
-
-    /**
-     * Generating signature and timestamp for specified S3 operation
-     *
-     * @param  string  $operation    S3 operation name
-     * @return array
-     * @author Alexey Sukhotin
-     **/
-    protected function sign($operation) {
-
-        $params = array(
-            'AWSAccessKeyId' => $this->accesskey,
-            'Timestamp' => gmdate('Y-m-d\TH:i:s.000\Z'),
-        );
-
-        $sign_str = 'AmazonS3' . $operation . $params['Timestamp'];
-
-        $params['Signature'] = base64_encode(hash_hmac('sha1', $sign_str, $this->secretkey, TRUE));
-
-        return $params;
-    }
-
-}
-
-?>
-

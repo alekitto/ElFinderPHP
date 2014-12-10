@@ -1470,7 +1470,7 @@ abstract class ElFinderVolumeDriver {
             $stat['height'] = $s[1];
         }
         // $this->clearcache();
-        if (($path = $this->_save($fp, $dstpath, $name, $stat)) == false) {
+        if (($path = $this->_save($fp, $dstpath, $name, $mime, $stat)) == false) {
             return false;
         }
 
@@ -2660,7 +2660,7 @@ abstract class ElFinderVolumeDriver {
             }
 
             if (($fp = $volume->open($src)) == false
-                || ($path = $this->_save($fp, $destination, $name, $source)) == false) {
+                || ($path = $this->_save($fp, $destination, $name, $source['mime'], $source)) == false) {
                 $fp && $volume->close($fp, $src);
                 return $this->setError(ElFinder::ERROR_COPY, $errpath);
             }
@@ -3694,7 +3694,7 @@ abstract class ElFinderVolumeDriver {
      * @return bool|string
      * @author Dmitry (dio) Levashov
      **/
-    abstract protected function _save($fp, $dir, $name, $stat);
+    abstract protected function _save($fp, $dir, $name, $mime, $stat);
 
     /**
      * Get file contents

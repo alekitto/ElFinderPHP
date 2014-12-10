@@ -820,7 +820,7 @@ class ElFinderVolumeMySQL extends ElFinderVolumeDriver {
 	 * @return bool|string
 	 * @author Dmitry (dio) Levashov
 	 **/
-	protected function _save($fp, $dir, $name, $stat) {
+	protected function _save($fp, $dir, $name, $mime, $stat) {
 		$this->clearcache();
 		
 		$mime = $stat['mime'];

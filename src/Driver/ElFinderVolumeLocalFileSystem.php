@@ -525,7 +525,7 @@ class ElFinderVolumeLocalFileSystem extends ElFinderVolumeDriver {
 	 * @return bool|string
 	 * @author Dmitry (dio) Levashov
 	 **/
-	protected function _save($fp, $dir, $name, $stat) {
+	protected function _save($fp, $dir, $name, $mime, $stat) {
 		$path = $dir.DIRECTORY_SEPARATOR.$name;
 
 		if (!($target = @fopen($path, 'wb'))) {

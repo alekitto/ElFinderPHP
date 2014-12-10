@@ -847,7 +847,7 @@ $("#'.$options['id'].'").elfinder("instance").trigger("netmount", {protocol: "dr
             clearstatcache();
             $size = getimagesize($path);
             if ($fp = @fopen($path, 'rb')) {
-                $res = $this->_save($fp, $path4stat, '', array());
+                $res = $this->_save($fp, $path4stat, '', 'text/plain', array());
                 @fclose($fp);
 
                 file_exists($path) && @unlink($path);
@@ -1425,7 +1425,7 @@ $("#'.$options['id'].'").elfinder("instance").trigger("netmount", {protocol: "dr
      * @return bool|string
      * @author Dmitry (dio) Levashov
      **/
-    protected function _save($fp, $path, $name, $stat) {
+    protected function _save($fp, $path, $name, $mime, $stat) {
         if ($name) $path .= '/'.$name;
         $path = $this->_normpath($path);
         try {
@@ -1471,7 +1471,7 @@ $("#'.$options['id'].'").elfinder("instance").trigger("netmount", {protocol: "dr
             if (@file_put_contents($local, $content, LOCK_EX) !== false
                 && ($fp = @fopen($local, 'rb'))) {
                 clearstatcache();
-                $res = $this->_save($fp, $path, '', array());
+                $res = $this->_save($fp, $path, '', 'text/plain', array());
                 @fclose($fp);
             }
             file_exists($local) && @unlink($local);

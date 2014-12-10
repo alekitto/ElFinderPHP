@@ -844,7 +844,7 @@ class ElFinderVolumeFTP extends ElFinderVolumeDriver {
 	 * @return bool|string
 	 * @author Dmitry (dio) Levashov
 	 **/
-	protected function _save($fp, $dir, $name, $stat) {
+	protected function _save($fp, $dir, $name, $mime, $stat) {
 		$path = $dir.'/'.$name;
 		return ftp_fput($this->connect, $path, $fp, $this->ftpMode($path))
 			? $path
