@@ -28,6 +28,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
             'secretkey' => '',
             'bucket'    => '',
             'tmpPath'   => '',
+            'endpoint'  => ''
         );
         $this->options = array_merge($this->options, $opts);
         $this->options['mimeDetect'] = 'internal';
@@ -41,11 +42,20 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
             return $this->setError('Required options undefined.');
         }
 
-        $this->s3 = S3Client::factory(array(
+        $options = array(
             'key' => $this->options['accesskey'],
             'secret' => $this->options['secretkey']
-        ));
+        );
 
+        if (!empty($this->options['endpoint'])) {
+            $options['base_url'] = $this->options['endpoint'];
+        }
+
+        if (!empty($this->options['region'])) {
+            $options['region'] = $this->options['region'];
+        }
+
+        $this->s3 = S3Client::factory($options);
         $this->root = $this->options['path'];
 
         $this->rootName = 's3';
