@@ -314,7 +314,7 @@ class ElFinderVolumeS3 extends ElFinderVolumeDriver {
      **/
     protected function _scandir($path) {
         $s3path = $this->_normpath($path) . '/';
-        $files = $this->s3->listObjects(array('Bucket' => $this->options['bucket'], 'delimiter' => '/', 'Prefix' => $path))->get("Contents");
+        $files = $this->s3->listObjects(array('Bucket' => $this->options['bucket'], 'delimiter' => '/', 'Prefix' => $s3path))->get("Contents");
         $finalfiles = array();
 
         foreach ($files as $file) {
